@@ -1,0 +1,766 @@
+// Imdod — kitob va kanstovar do'koni tizimi
+//
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │ IKKI ASOSIY QOIDA — butun sxema shularga tayanadi                   │
+// ├─────────────────────────────────────────────────────────────────────┤
+// │ 1. QOLDIQ HISOBLANADI, SAQLANMAYDI.                                 │
+// │    StockMovement — o'zgarmas (append-only) jurnal. Qoldiq shu       │
+// │    jurnal yig'indisi. StockBalance faqat tezlik uchun kesh.         │
+// │    Nega? 5-6 kassa oflayn ishlaydi. Qo'shiluvchi (+5, -1) sonlar    │
+// │    kelish TARTIBIGA bog'liq emas — shuning uchun sinxronizatsiyada  │
+// │    konflikt bo'lmaydi. Absolyut qoldiqni sinxronlasak, oxirgi       │
+// │    kelgan qurilma boshqalarning savdosini o'chirib yuborardi.       │
+// │                                                                     │
+// │ 2. PUL VA MIQDOR — BUTUN SON.                                       │
+// │    Pul    → butun so'm.        12 000 so'm  = 12000                 │
+// │    Miqdor → mingdan bir ulush.  1.5 kg      = 1500                  │
+// │    Float ishlatilsa, tiyinlar to'planib smena yopilganda farq       │
+// │    bo'lib chiqadi. Int hech qachon yolg'on gapirmaydi.              │
+// │    Chegara: bitta hujjat uchun 2 147 483 647 so'm (~2.1 mlrd).      │
+// └─────────────────────────────────────────────────────────────────────┘
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  ENUM'lar
+// ══════════════════════════════════════════════════════════════════════
+
+enum Unit {
+  DONA
+  KG
+  METR
+  KOMPLEKT
+  UPAKOVKA
+}
+
+enum PriceType {
+  RETAIL
+  WHOLESALE
+}
+
+/// CARD — terminal ALOHIDA ishlaydi. Tizim to'lovda qatnashmaydi,
+/// faqat "karta orqali to'landi" deb qayd etadi.
+enum PaymentMethod {
+  CASH
+  CARD
+  DEBT
+}
+
+enum StockMovementType {
+  RECEIPT /// ta'minotchidan kirim
+  SALE /// sotildi
+  RETURN /// mijoz qaytardi
+  WRITE_OFF /// hisobdan chiqarildi
+  ADJUSTMENT /// inventarizatsiya tuzatishi
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
+  STOCKKEEPER
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum DebtTransactionType {
+  CHARGE /// nasiyaga sotildi — qarz oshdi
+  PAYMENT /// qarz to'landi — qarz kamaydi
+}
+
+enum InventoryCountStatus {
+  DRAFT
+  APPLIED
+  CANCELLED
+}
+
+/// Onlayn zakaz holati. POS'ga hech qanday aloqasi yo'q.
+enum PreOrderStatus {
+  NEW
+  IN_PROGRESS
+  READY
+  DONE
+  CANCELLED
+}
+
+enum ChangeOp {
+  UPSERT
+  DELETE
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Foydalanuvchilar va kassalar
+// ══════════════════════════════════════════════════════════════════════
+
+model User {
+  id       String   @id @default(uuid())
+  fullName String
+  phone    String?  @unique
+  role     UserRole @default(CASHIER)
+
+  /// POS'ga kirish uchun. Oflaynda ham ishlashi kerak, shuning uchun
+  /// hash qurilmaga sinxronlanadi — PIN'ning o'zi hech qachon emas.
+  pinHash String
+
+  /// Admin panelga kirish uchun (faqat ADMIN/MANAGER'da bo'ladi).
+  passwordHash String?
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  openedShifts     Shift[]             @relation("ShiftOpenedBy")
+  closedShifts     Shift[]             @relation("ShiftClosedBy")
+  sales            Sale[]
+  returns          SaleReturn[]
+  stockMovements   StockMovement[]
+  purchaseReceipts PurchaseReceipt[]
+  inventoryCounts  InventoryCount[]
+  debtTransactions DebtTransaction[]
+  auditLogs        AuditLog[]
+
+  @@index([isActive])
+}
+
+/// Jismoniy kassa (kompyuter). Chek raqami shu kassaning kodi bilan
+/// boshlanadi — shuning uchun 6 kassa oflaynda ham raqam to'qnashtirmaydi.
+model Register {
+  id   String @id @default(uuid())
+  /// K01, K02, ... — chek raqami prefiksi
+  code String @unique
+  name String
+
+  isActive Boolean @default(true)
+
+  /// Shu kassa bergan oxirgi chek tartib raqami (serverdagi nusxasi).
+  lastReceiptSeq Int @default(0)
+
+  /// Monitoring uchun: oxirgi marta qachon sinxronlangan.
+  lastSeenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  devices        Device[]
+  shifts         Shift[]
+  sales          Sale[]
+  returns        SaleReturn[]
+  stockMovements StockMovement[]
+}
+
+/// Qurilma tokeni. Kassa kompyuteri o'g'irlansa shu yozuv bekor qilinadi.
+model Device {
+  id         String   @id @default(uuid())
+  registerId String
+  register   Register @relation(fields: [registerId], references: [id])
+
+  name      String
+  tokenHash String    @unique
+  revokedAt DateTime?
+
+  /// Bu qurilma serverdan qayerga qadar o'qib olgan (ChangeLog.seq).
+  syncCursor BigInt @default(0)
+
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime?
+
+  @@index([registerId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Katalog
+// ══════════════════════════════════════════════════════════════════════
+
+model Category {
+  id        String  @id @default(uuid())
+  nameUz    String
+  nameRu    String
+  parentId  String?
+  sortOrder Int     @default(0)
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+}
+
+model Product {
+  id     String @id @default(uuid())
+  nameUz String
+  nameRu String
+  unit   Unit   @default(DONA)
+
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  brand       String?
+  productType String?
+  description String?
+
+  // --- narxlar, butun so'mda ---
+  costPrice      Int @default(0) /// tan narxi
+  retailPrice    Int @default(0) /// dona narxi
+  wholesalePrice Int @default(0) /// optom narxi (0 = belgilanmagan)
+
+  /// Shu miqdordan pastga tushsa ogohlantirish (mingdan bir ulushda).
+  minStock Int @default(0)
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  barcodes            Barcode[]
+  stockMovements      StockMovement[]
+  balance             StockBalance?
+  saleLines           SaleLine[]
+  returnLines         SaleReturnLine[]
+  purchaseLines       PurchaseReceiptLine[]
+  inventoryCountLines InventoryCountLine[]
+  preOrderLines       PreOrderLine[]
+
+  @@index([isActive])
+  @@index([categoryId])
+  @@index([nameUz])
+  @@index([nameRu])
+}
+
+/// ⚠️ `code` ustuni ATAYLAB unique EMAS.
+///
+/// Imdod talabi: bitta mahsulotda bir nechta shtrix-kod bo'lishi ham,
+/// bitta shtrix-kod bir nechta mahsulotga tegishli bo'lishi ham mumkin.
+/// (Kanstovarda odatiy hol: ta'minotchi bir xil generik kodni turli
+/// tovarlarga yopishtiradi.)
+///
+/// Shuning uchun skanerlash natijasi HAR DOIM ro'yxat. Bitta topilsa
+/// darhol savatga qo'shiladi, bir nechta topilsa kassir tanlaydi.
+model Barcode {
+  id        String  @id @default(uuid())
+  code      String
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Etiketka chop etishda ishlatiladigan asosiy kod.
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  /// Bitta mahsulotga bitta kod ikki marta biriktirilmasin.
+  @@unique([code, productId])
+  /// Skanerlash bo'yicha qidiruv shu indeksga tayanadi.
+  @@index([code])
+  @@index([productId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Ombor — o'zgarmas jurnal (append-only ledger)
+// ══════════════════════════════════════════════════════════════════════
+
+/// Bu jadvalga faqat YOZILADI. Hech qachon UPDATE yoki DELETE qilinmaydi.
+/// Xato bo'lsa — teskari harakat qo'shiladi, eskisi o'chirilmaydi.
+model StockMovement {
+  /// Qurilmada generatsiya qilinadi (UUID). Takror yuborilsa server
+  /// shu ID bo'yicha tanib, dublikat yaratmaydi — idempotentlik.
+  id String @id
+
+  productId String
+  product   Product           @relation(fields: [productId], references: [id])
+  type      StockMovementType
+
+  /// Miqdor o'zgarishi, mingdan bir ulushda. Kirim musbat, sotuv manfiy.
+  qtyDelta Int
+
+  /// Shu harakat paytidagi tan narxi (foyda hisobi uchun nusxa).
+  unitCost Int @default(0)
+
+  /// Qaysi hujjat sabab bo'ldi: "SALE" / "RETURN" / "RECEIPT" / "COUNT"
+  refType String?
+  refId   String?
+
+  registerId String?
+  register   Register? @relation(fields: [registerId], references: [id])
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id])
+
+  /// Qurilma soati bo'yicha vaqt. Qurilma soati noto'g'ri bo'lishi mumkin.
+  occurredAt DateTime
+  /// Server qabul qilgan vaqt. Tartiblashda SHU avtoritar.
+  receivedAt DateTime @default(now())
+
+  note String?
+
+  @@index([productId, occurredAt])
+  @@index([refType, refId])
+  @@index([receivedAt])
+}
+
+/// Tezlik uchun kesh. Har doim StockMovement yig'indisidan qayta
+/// hisoblanishi mumkin — ya'ni buzilsa ham ma'lumot yo'qolmaydi.
+model StockBalance {
+  productId String  @id
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Mingdan bir ulushda. MANFIY bo'lishi MUMKIN — bu xato emas:
+  /// ikki kassa oflaynda oxirgi donani sotgan bo'lsa shunday bo'ladi.
+  /// Bunday holatlar "Nomuvofiqliklar" hisobotida ko'rsatiladi.
+  qty Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@index([qty])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Smena va savdo
+// ══════════════════════════════════════════════════════════════════════
+
+model Shift {
+  id         String   @id @default(uuid())
+  registerId String
+  register   Register @relation(fields: [registerId], references: [id])
+
+  openedById String
+  openedBy   User     @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  openedAt   DateTime
+
+  /// Smena boshida kassadagi naqd pul.
+  openingCash Int @default(0)
+
+  closedById String?
+  closedBy   User?     @relation("ShiftClosedBy", fields: [closedById], references: [id])
+  closedAt   DateTime?
+
+  /// Smena oxirida kassir sanagan naqd pul.
+  closingCash Int?
+  /// Tizim hisobi bo'yicha bo'lishi kerak bo'lgan naqd.
+  expectedCash Int?
+  /// closingCash - expectedCash. Manfiy = kam chiqdi.
+  variance Int?
+
+  status ShiftStatus @default(OPEN)
+
+  sales   Sale[]
+  returns SaleReturn[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([registerId, status])
+  @@index([openedAt])
+}
+
+model Sale {
+  /// Qurilmada generatsiya qilinadi. Idempotentlik kaliti:
+  /// tarmoq uzilib qayta yuborilsa ham dublikat savdo yaratilmaydi.
+  id String @id
+
+  /// K02-000123 — kassa kodi + tartib raqam.
+  number String @unique
+
+  registerId String
+  register   Register @relation(fields: [registerId], references: [id])
+  shiftId    String
+  shift      Shift    @relation(fields: [shiftId], references: [id])
+  cashierId  String
+  cashier    User     @relation(fields: [cashierId], references: [id])
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  // --- summalar, butun so'mda ---
+  grossAmount  Int /// chegirmalarsiz jami
+  lineDiscount Int @default(0) /// qator chegirmalari yig'indisi
+  cartDiscount Int @default(0) /// savat darajasidagi chegirma
+  totalAmount  Int /// to'lanishi kerak bo'lgan summa
+  cashRounding Int @default(0) /// naqd yaxlitlash farqi
+  profit       Int @default(0) /// tan narx nusxalari bo'yicha foyda
+
+  /// Qurilma soati / server soati — ikkalasi ham saqlanadi.
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  note     String?
+  isVoided Boolean @default(false)
+
+  lines            SaleLine[]
+  payments         Payment[]
+  returns          SaleReturn[]
+  debtTransactions DebtTransaction[]
+
+  @@index([occurredAt])
+  @@index([shiftId])
+  @@index([customerId])
+  @@index([receivedAt])
+}
+
+model SaleLine {
+  id     String @id
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  /// Nom nusxasi: mahsulot nomi keyin o'zgarsa ham eski chek buzilmaydi.
+  nameSnapshot String
+  unit         Unit
+
+  qty       Int /// mingdan bir ulushda
+  unitPrice Int
+  priceType PriceType @default(RETAIL)
+
+  discountPercent Int @default(0) /// yuzdan bir foizda: 1250 = 12.5%
+  lineDiscount    Int @default(0)
+  /// Savat chegirmasi taqsimlangandan KEYINGI yakuniy summa.
+  /// Qatorlar yig'indisi har doim aniq Sale.totalAmount ga teng.
+  totalAmount     Int
+
+  /// Sotuv paytidagi tan narxi nusxasi — foyda tarixi buzilmasligi uchun.
+  costPrice Int @default(0)
+  profit    Int @default(0)
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model Payment {
+  id     String @id
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  method PaymentMethod
+  amount Int
+
+  @@index([saleId])
+  @@index([method])
+}
+
+model SaleReturn {
+  id     String @id
+  number String @unique
+
+  /// Asl savdo topilmasa ham qaytarish mumkin (chek yo'qolgan bo'lsa).
+  originalSaleId String?
+  originalSale   Sale?   @relation(fields: [originalSaleId], references: [id])
+
+  registerId String
+  register   Register @relation(fields: [registerId], references: [id])
+  shiftId    String
+  shift      Shift    @relation(fields: [shiftId], references: [id])
+  cashierId  String
+  cashier    User     @relation(fields: [cashierId], references: [id])
+
+  totalAmount Int
+  reason      String?
+
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  lines SaleReturnLine[]
+
+  @@index([occurredAt])
+  @@index([shiftId])
+}
+
+model SaleReturnLine {
+  id       String     @id
+  returnId String
+  return   SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  productId    String
+  product      Product @relation(fields: [productId], references: [id])
+  nameSnapshot String
+  unit         Unit
+
+  qty         Int
+  unitPrice   Int
+  totalAmount Int
+  costPrice   Int @default(0)
+
+  @@index([returnId])
+  @@index([productId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Mijozlar va nasiya
+// ══════════════════════════════════════════════════════════════════════
+
+model Customer {
+  id       String  @id @default(uuid())
+  fullName String
+  phone    String? @unique
+
+  /// ⚠️ Faqat ADMIN panelda qo'lda belgilanadi. Optom narx faqat shunda
+  /// ko'rinadi — saytda ro'yxatdan o'tishning o'zi yetarli emas.
+  isWholesale Boolean @default(false)
+
+  /// Shaxsiy chegirma, yuzdan bir foizda: 500 = 5%.
+  discountPercent Int @default(0)
+
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales            Sale[]
+  debtTransactions DebtTransaction[]
+  onlineAccounts   OnlineAccount[]
+
+  @@index([phone])
+  @@index([isWholesale])
+}
+
+/// Qarz ham JURNAL — balans shu yozuvlar yig'indisi.
+/// Shuning uchun ikki kassa oflaynda bir mijozga nasiya bersa ham
+/// konflikt bo'lmaydi: ikkala yozuv ham qo'shiladi.
+model DebtTransaction {
+  id String @id
+
+  customerId String
+  customer   Customer            @relation(fields: [customerId], references: [id])
+  type       DebtTransactionType
+
+  /// Har doim MUSBAT. Yo'nalishni `type` belgilaydi.
+  amount Int
+
+  saleId String?
+  sale   Sale?   @relation(fields: [saleId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+  note       String?
+
+  @@index([customerId, occurredAt])
+  @@index([saleId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Ta'minot va inventarizatsiya
+// ══════════════════════════════════════════════════════════════════════
+
+model Supplier {
+  id    String  @id @default(uuid())
+  name  String
+  phone String?
+  note  String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  receipts PurchaseReceipt[]
+}
+
+model PurchaseReceipt {
+  id     String @id
+  number String @unique
+
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+
+  totalAmount Int
+  note        String?
+
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  lines PurchaseReceiptLine[]
+
+  @@index([occurredAt])
+  @@index([supplierId])
+}
+
+model PurchaseReceiptLine {
+  id        String          @id
+  receiptId String
+  receipt   PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  qty         Int /// mingdan bir ulushda
+  unitCost    Int
+  totalAmount Int
+
+  @@index([receiptId])
+  @@index([productId])
+}
+
+model InventoryCount {
+  id     String @id
+  number String @unique
+
+  status      InventoryCountStatus @default(DRAFT)
+  startedById String
+  startedBy   User                 @relation(fields: [startedById], references: [id])
+
+  startedAt DateTime
+  appliedAt DateTime?
+  note      String?
+
+  /// ⚠️ Oflaynda boshlangan sanoq server'ga kech yetib kelishi mumkin.
+  /// Oraliqda boshqa harakatlar bo'lgan bo'lsa, tizim JIMGINA yozmaydi —
+  /// bu bayroq qo'yiladi va menejer tekshiradi.
+  needsReview Boolean @default(false)
+
+  lines InventoryCountLine[]
+
+  @@index([status])
+}
+
+model InventoryCountLine {
+  id      String         @id
+  countId String
+  count   InventoryCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  /// Sanoq boshlangandagi tizim qoldig'i (snapshot).
+  expectedQty Int
+  /// Xodim sanagan haqiqiy qoldiq.
+  countedQty  Int
+  /// countedQty - expectedQty. ADJUSTMENT harakati shu miqdorda yaratiladi.
+  diffQty     Int
+
+  @@index([countId])
+  @@index([productId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Onlayn zakaz (sayt / Telegram bot / Mini App)
+// ══════════════════════════════════════════════════════════════════════
+
+/// Sayt yoki bot foydalanuvchisi. POS foydalanuvchisidan (`User`) butunlay
+/// alohida — bu mijoz, xodim emas.
+model OnlineAccount {
+  id         String  @id @default(uuid())
+  phone      String  @unique
+  telegramId String? @unique
+  fullName   String
+
+  passwordHash String?
+
+  /// Admin bog'lagach, mijozning `isWholesale` bayrog'i orqali
+  /// optom narx ko'rina boshlaydi.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  isBlocked Boolean  @default(false)
+  locale    String   @default("uz")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  preOrders PreOrder[]
+
+  @@index([customerId])
+}
+
+/// ⚠️⚠️ ENG MUHIM QOIDA ⚠️⚠️
+///
+/// PreOrder — bu shunchaki YIG'ISH RO'YXATI.
+///
+///   • Hech qanday StockMovement YARATMAYDI
+///   • Qoldiqni kamaytirmaydi va REZERV QILMAYDI
+///   • To'lov talab qilmaydi
+///   • POS'da KO'RINMAYDI va kassalarga sinxronlanmaydi
+///
+/// Xodim ro'yxatni ko'rib tovarni yig'ib qo'yadi va ustiga kimniki
+/// ekanini yozadi. Mijoz kelgach tovar ODDIY tarzda kassadan o'tadi —
+/// qoldiq faqat O'SHANDA kamayadi.
+///
+/// Tovar yetishmay qolsa hech qanday avtomatik amal bo'lmaydi;
+/// mijoz kelganda o'zi hal qiladi.
+model PreOrder {
+  id     String @id @default(uuid())
+  /// Z-1042
+  number String @unique
+
+  accountId String
+  account   OnlineAccount  @relation(fields: [accountId], references: [id])
+  status    PreOrderStatus @default(NEW)
+
+  comment String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines PreOrderLine[]
+
+  @@index([accountId])
+  @@index([status, createdAt])
+}
+
+model PreOrderLine {
+  id         String   @id @default(uuid())
+  preOrderId String
+  preOrder   PreOrder @relation(fields: [preOrderId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  qty Int /// mingdan bir ulushda
+
+  /// Zakaz berilgan paytdagi narx — FAQAT ma'lumot uchun.
+  /// Kassada haqiqiy joriy narx qo'llanadi, bu emas.
+  priceSnapshot Int @default(0)
+
+  @@index([preOrderId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Sinxronizatsiya va audit
+// ══════════════════════════════════════════════════════════════════════
+
+/// Qurilmalar shu jurnaldan o'z kursoridan keyingi o'zgarishlarni oladi.
+/// Faqat SPRAVOCHNIK ma'lumotlari (mahsulot, narx, mijoz, foydalanuvchi)
+/// bu yerga tushadi — hujjatlar emas.
+model ChangeLog {
+  seq BigInt @id @default(autoincrement())
+
+  entity   String /// "Product", "Barcode", "Customer", ...
+  entityId String
+  op       ChangeOp @default(UPSERT)
+  payload  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([entity, seq])
+}
+
+model AuditLog {
+  id String @id @default(uuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  action   String /// "product.update", "shift.close", ...
+  entity   String
+  entityId String
+
+  before Json?
+  after  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}

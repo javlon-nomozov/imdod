@@ -1,0 +1,11 @@
+# Windows'da ishlanadi, Linux serverga chiqariladi — satr oxirini
+# repozitoriyada har doim LF qilib saqlaymiz.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+pnpm-lock.yaml linguist-generated=true

@@ -1,0 +1,43 @@
+node_modules/
+dist/
+build/
+out/
+.next/
+.turbo/
+coverage/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# electron
+release/
+*.exe
+*.msi
+
+# expo / rn
+.expo/
+*.apk
+*.aab
+*.ipa
+
+# local databases (POS offline mirror)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# editors / os
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: imdod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: imdod
+      POSTGRES_PASSWORD: imdod_dev_password
+      POSTGRES_DB: imdod
+      # Kirill/lotin harflar bilan to'g'ri saralash uchun
+      LANG: C.UTF-8
+    ports:
+      # Kompyuterda alohida o'rnatilgan PostgreSQL 5432 ni band qilgani uchun
+      # Imdod bazasi 5433 da turadi — ular bir-biriga xalaqit bermaydi.
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U imdod -d imdod']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

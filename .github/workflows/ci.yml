@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: imdod
+          POSTGRES_PASSWORD: imdod_test_password
+          POSTGRES_DB: imdod_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U imdod -d imdod_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://imdod:imdod_test_password@localhost:5433/imdod_test?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Prisma client generatsiyasi
+        run: pnpm --filter @imdod/api exec prisma generate
+
+      - name: Migratsiyalarni qo'llash
+        run: pnpm --filter @imdod/api exec prisma migrate deploy
+
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test

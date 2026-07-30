@@ -1,0 +1,19 @@
+{
+  // Chiqish formati — CommonJS.
+  //
+  // Nega ESM emas? Bu paketni NestJS API (CommonJS'ga kompilyatsiya
+  // qilinadi) ham, Vite/Metro bundler'lari ham ishlatadi. CommonJS'ni
+  // hammasi o'qiy oladi; ESM'ni esa CommonJS `require()` qila olmaydi.
+  // Bundler'lar uchun CJS hech qanday muammo tug'dirmaydi.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false,
+    "isolatedModules": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["**/*.test.ts", "dist", "node_modules"]
+}

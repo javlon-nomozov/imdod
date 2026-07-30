@@ -1,0 +1,13 @@
+{
+  // Faqat build uchun. `rootDir` ni `src` ga qotirib qo'yamiz —
+  // aks holda `prisma/` ham ildizga kirib, natija `dist/src/main.js`
+  // bo'lib qoladi va `node dist/main.js` topa olmaydi.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "prisma", "**/*.test.ts"]
+}
