@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "noEmit": true,
+    "isolatedModules": false,
+    "types": ["electron-vite/node", "node"]
+  },
+  "include": ["src/main/**/*", "src/preload/**/*"]
+}

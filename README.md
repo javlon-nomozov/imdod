@@ -7,7 +7,7 @@ Kitob va kanstovar do'koni uchun savdo tizimi: **POS**, **mobil ilova**, **websa
 | Papka              | Nima                                            | Holat        |
 | ------------------ | ----------------------------------------------- | ------------ |
 | `apps/api`         | NestJS + PostgreSQL + Prisma                    | ✅ 1-bosqich |
-| `apps/pos-desktop` | Electron + React, oflayn ishlaydigan kassa      | rejalashtir. |
+| `apps/pos-desktop` | Electron + React, oflayn ishlaydigan kassa      | ✅ 2-bosqich |
 | `apps/mobile`      | Expo — hisobot, skanerlash, mobil savdo         | rejalashtir. |
 | `apps/web`         | Next.js — sayt, admin panel, Telegram Mini App  | rejalashtir. |
 | `apps/bot`         | Telegram bot (grammY)                           | rejalashtir. |
@@ -50,6 +50,15 @@ Seed konsolga bir martalik qurilma tokenini chiqaradi — shu token bilan
 `POST /auth/pos/login` (`x-device-token` sarlavhasi + PIN `1234` ADMIN
 uchun) orqali kirish mumkin.
 
+POS desktop ilovasini ishga tushirish (API alohida terminalda ishlab turishi kerak):
+
+```bash
+pnpm --filter pos-desktop dev
+```
+
+Birinchi ochilganda "Qurilmani sozlash" ekrani chiqadi — seed skripti
+chiqargan qurilma tokenini kiriting, so'ng PIN `1234` bilan kiring.
+
 > ⚠️ Baza **5433**-portda turadi, 5432 emas — bu kompyuterda alohida o'rnatilgan PostgreSQL 5432 ni band qilgan. Sozlama: `docker-compose.yml` va `apps/api/.env`.
 
 Kerakli buyruqlar:
@@ -68,7 +77,7 @@ pnpm db:down          # bazani to'xtatish
 
 - [x] **0** — Monorepo poydevori, Prisma sxemasi, `core` va `i18n`
 - [x] **1** — API yadrosi: auth (qurilma tokeni + PIN + admin parol), rollar/guard'lar, katalog CRUD, ombor jurnali, smena, savdo (idempotent)
-- [ ] **2** — POS desktop MVP (onlayn)
+- [x] **2** — POS desktop MVP (onlayn): Electron+React, PIN login, smena, skaner, savat, naqd/karta to'lov, chek, katalog import/eksport
 - [ ] **3** — Oflayn qatlam: SQLite mirror, outbox, sinxronizatsiya
 - [ ] **4** — Ombor va ta'minot
 - [ ] **5** — Mijozlar va nasiya

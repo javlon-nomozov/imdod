@@ -1,16 +1,19 @@
 {
-  // Chiqish formati — CommonJS.
+  // CommonJS build — NestJS API shu orqali `require()` qiladi.
   //
-  // Nega ESM emas? Bu paketni NestJS API (CommonJS'ga kompilyatsiya
-  // qilinadi) ham, Vite/Metro bundler'lari ham ishlatadi. CommonJS'ni
-  // hammasi o'qiy oladi; ESM'ni esa CommonJS `require()` qila olmaydi.
-  // Bundler'lar uchun CJS hech qanday muammo tug'dirmaydi.
+  // Ikkala format ham kerak: Vite/Rollup'ning production build'i
+  // (`@rollup/plugin-commonjs`) bu paketning CJS chiqishidagi nomlangan
+  // eksportlarni ba'zan statik aniqlay olmaydi ("X is not exported by
+  // dist/index.js" xatosi) — shuning uchun bundler asosidagi ilovalar
+  // (POS desktop, keyinchalik sayt/mobil) ESM nusxasini ishlatadi
+  // (`tsconfig.build.esm.json`, `dist/esm/`). Ikkalasi ham bir xil
+  // manbadan, faqat chiqish formati boshqa.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "Node",
     "rootDir": "src",
-    "outDir": "dist",
+    "outDir": "dist/cjs",
     "noEmit": false,
     "isolatedModules": false
   },

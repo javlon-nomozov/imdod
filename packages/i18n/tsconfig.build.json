@@ -1,12 +1,12 @@
 {
-  // Izoh uchun: packages/core/tsconfig.build.json ga qarang —
-  // chiqish formati bir xil sababga ko'ra CommonJS.
+  // Izoh uchun: packages/core/tsconfig.build.json ga qarang — nega
+  // CJS+ESM ikkalasi kerakligi shu yerda tushuntirilgan.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "Node",
     "rootDir": "src",
-    "outDir": "dist",
+    "outDir": "dist/cjs",
     "noEmit": false,
     "isolatedModules": false
   },

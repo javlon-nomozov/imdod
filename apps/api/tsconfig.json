@@ -10,7 +10,7 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
-    "types": ["node"]
+    "types": ["node", "multer"]
   },
   // Tekshiruv uchun seed skripti ham qamrab olinadi.
   // Build esa `tsconfig.build.json` bilan ketadi — u faqat `src` ni oladi.
