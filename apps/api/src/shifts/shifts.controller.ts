@@ -14,7 +14,7 @@ export class ShiftsController {
 
   @Post('open')
   openShift(@Body() dto: OpenShiftDto, @CurrentUser() user: AccessTokenPayload): Promise<Shift> {
-    return this.shifts.openShift(dto.registerId, user.sub, dto.openingCash);
+    return this.shifts.openShift(dto.id, dto.registerId, user.sub, dto.openingCash);
   }
 
   @Post(':id/close')

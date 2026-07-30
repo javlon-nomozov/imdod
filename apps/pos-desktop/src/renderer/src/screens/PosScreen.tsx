@@ -1,14 +1,14 @@
 import { resolvePrice, toQty } from '@imdod/core';
 import { useCallback, useState } from 'react';
-import { scanBarcode } from '../api/endpoints';
 import type { Product, ProductScanOutcome } from '../api/types';
 import { Cart } from '../components/pos/Cart';
+import { SyncStatusBadge } from '../components/layout/SyncStatusBadge';
 import { ProductPickerModal } from '../components/pos/ProductPickerModal';
 import { ScanNotFoundToast } from '../components/pos/ScanNotFoundToast';
 import { SearchPanel } from '../components/pos/SearchPanel';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { useCartStore } from '../stores/cart.store';
-import { useSessionStore } from '../stores/session.store';
+import { useLocalSessionStore } from '../stores/local-session.store';
 
 interface PosScreenProps {
   onPay: () => void;
@@ -17,7 +17,7 @@ interface PosScreenProps {
 }
 
 export function PosScreen({ onPay, onOpenImport, onCloseShift }: PosScreenProps) {
-  const user = useSessionStore((s) => s.user);
+  const user = useLocalSessionStore((s) => s.user);
   const addLine = useCartStore((s) => s.addLine);
   const [pickerProducts, setPickerProducts] = useState<Product[] | null>(null);
   const [notFoundCode, setNotFoundCode] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export function PosScreen({ onPay, onOpenImport, onCloseShift }: PosScreenProps)
 
   const handleScan = useCallback(
     (code: string) => {
-      void scanBarcode(code).then(handleOutcome);
+      void window.imdod.catalogScan(code).then((outcome) => handleOutcome(outcome as ProductScanOutcome));
     },
     [handleOutcome],
   );
@@ -70,6 +70,7 @@ export function PosScreen({ onPay, onOpenImport, onCloseShift }: PosScreenProps)
           <div>
             <p className="text-sm text-slate-500">Rol</p>
             <p className="font-medium text-slate-900">{user?.role}</p>
+            <SyncStatusBadge />
           </div>
           <div className="flex gap-2">
             {canImport && (

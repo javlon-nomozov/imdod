@@ -19,6 +19,10 @@ export class CreateSaleDto {
   @IsString()
   shiftId!: string;
 
+  /** Qurilmada generatsiya qilingan chek raqami (masalan "K01-000042"). */
+  @IsString()
+  number!: string;
+
   @IsOptional()
   @IsString()
   customerId?: string;

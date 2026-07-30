@@ -1,6 +1,5 @@
 import { formatSum } from '@imdod/core';
 import { useState } from 'react';
-import { searchProducts } from '../../api/endpoints';
 import type { Product } from '../../api/types';
 import { useT } from '../../i18n/useT';
 
@@ -24,8 +23,8 @@ export function SearchPanel({ onSelect }: SearchPanelProps) {
     }
     setSearching(true);
     try {
-      const { items } = await searchProducts(trimmed);
-      setResults(items);
+      const items = await window.imdod.catalogSearch(trimmed);
+      setResults(items as Product[]);
     } finally {
       setSearching(false);
     }

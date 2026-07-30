@@ -1,29 +1,29 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { resolveScan, type ScanOutcome } from '@imdod/core';
 import { Prisma, type Barcode, type Product } from '@prisma/client';
+import { ChangeLogService } from '../../change-log/change-log.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class BarcodesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly changeLog: ChangeLogService,
+  ) {}
 
   async attach(productId: string, code: string, isPrimary = false): Promise<Barcode> {
-    const product = await this.prisma.product.findFirst({
-      where: { id: productId, deletedAt: null },
-    });
+    const product = await this.prisma.product.findFirst({ where: { id: productId, deletedAt: null } });
     if (!product) throw new NotFoundException('Mahsulot topilmadi');
 
     const trimmed = code.trim();
-    if (trimmed.length === 0)
-      throw new BadRequestException('Shtrix-kod bo‘sh bo‘lishi mumkin emas');
+    if (trimmed.length === 0) throw new BadRequestException('Shtrix-kod bo‘sh bo‘lishi mumkin emas');
 
     try {
-      return await this.prisma.barcode.create({ data: { productId, code: trimmed, isPrimary } });
+      return await this.prisma.$transaction(async (tx) => {
+        const barcode = await tx.barcode.create({ data: { productId, code: trimmed, isPrimary } });
+        await this.changeLog.record('Barcode', barcode.id, 'UPSERT', barcode, tx);
+        return barcode;
+      });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('Bu kod shu mahsulotga allaqachon biriktirilgan');
@@ -35,7 +35,10 @@ export class BarcodesService {
   async detach(id: string): Promise<void> {
     const barcode = await this.prisma.barcode.findUnique({ where: { id } });
     if (!barcode) throw new NotFoundException('Shtrix-kod topilmadi');
-    await this.prisma.barcode.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.barcode.delete({ where: { id } });
+      await this.changeLog.record('Barcode', id, 'DELETE', { id }, tx);
+    });
   }
 
   /**

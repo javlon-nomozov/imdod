@@ -25,6 +25,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/core/package.json ./packages/core/
 COPY packages/i18n/package.json ./packages/i18n/
+COPY packages/sync/package.json ./packages/sync/
 RUN pnpm install --frozen-lockfile
 
 # ─── Build ────────────────────────────────────────────────────────────

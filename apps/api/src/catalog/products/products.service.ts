@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { ChangeLogService } from '../../change-log/change-log.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { CreateProductDto } from './dto/create-product.dto';
 import type { ListProductsQueryDto } from './dto/list-products.query.dto';
@@ -9,10 +10,17 @@ type ProductWithBarcodes = Prisma.ProductGetPayload<{ include: { barcodes: true 
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly changeLog: ChangeLogService,
+  ) {}
 
   create(dto: CreateProductDto): Promise<ProductWithBarcodes> {
-    return this.prisma.product.create({ data: dto, include: { barcodes: true } });
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({ data: dto, include: { barcodes: true } });
+      await this.changeLog.record('Product', product.id, 'UPSERT', product, tx);
+      return product;
+    });
   }
 
   async findById(id: string): Promise<ProductWithBarcodes> {
@@ -26,21 +34,28 @@ export class ProductsService {
 
   async update(id: string, dto: UpdateProductDto): Promise<ProductWithBarcodes> {
     await this.findById(id);
-    return this.prisma.product.update({ where: { id }, data: dto, include: { barcodes: true } });
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({ where: { id }, data: dto, include: { barcodes: true } });
+      await this.changeLog.record('Product', product.id, 'UPSERT', product, tx);
+      return product;
+    });
   }
 
   /** Yumshoq o'chirish — tarixiy cheklardagi nom nusxasi buzilmasligi uchun. */
   async softDelete(id: string): Promise<void> {
     await this.findById(id);
-    await this.prisma.product.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false },
+    await this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false },
+        include: { barcodes: true },
+      });
+      // Qattiq o'chirish emas — POS qurilmasi uchun ham UPSERT (isActive:false).
+      await this.changeLog.record('Product', product.id, 'UPSERT', product, tx);
     });
   }
 
-  async list(
-    query: ListProductsQueryDto,
-  ): Promise<{ items: ProductWithBarcodes[]; total: number }> {
+  async list(query: ListProductsQueryDto): Promise<{ items: ProductWithBarcodes[]; total: number }> {
     const where: Prisma.ProductWhereInput = {
       deletedAt: null,
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),

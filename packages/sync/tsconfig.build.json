@@ -1,0 +1,15 @@
+{
+  // CommonJS build — NestJS API shu orqali `require()` qiladi.
+  // ESM nusxasi (`tsconfig.build.esm.json`) POS desktop (Vite/Rollup) uchun.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": "src",
+    "outDir": "dist/cjs",
+    "noEmit": false,
+    "isolatedModules": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["**/*.test.ts", "dist", "node_modules"]
+}

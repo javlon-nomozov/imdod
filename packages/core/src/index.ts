@@ -15,3 +15,4 @@ export * from './pricing.js';
 export * from './receipt-number.js';
 export * from './barcode.js';
 export * from './text-match.js';
+export * from './shift.js';

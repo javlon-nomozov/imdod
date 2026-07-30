@@ -7,6 +7,7 @@ import { HealthController } from './health.controller';
 import { SalesModule } from './sales/sales.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { StockModule } from './stock/stock.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { StockModule } from './stock/stock.module';
     StockModule,
     ShiftsModule,
     SalesModule,
-    // Keyingi bosqichlarda: SyncModule, ReportsModule
+    SyncModule,
+    // Keyingi bosqichlarda: ReportsModule
   ],
   controllers: [HealthController],
 })

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import * as api from './api/endpoints';
-import { setApiBaseUrl, setDeviceToken } from './api/client';
+import { ApiError, setApiBaseUrl } from './api/client';
 import type { Sale, Shift } from './api/types';
 import { PaymentModal, type SimplePaymentMethod } from './components/payment/PaymentModal';
 import { ReceiptView } from './components/receipt/ReceiptView';
+import { AdminLoginScreen } from './screens/AdminLoginScreen';
 import { CatalogImportScreen } from './screens/CatalogImportScreen';
 import { CloseShiftScreen } from './screens/CloseShiftScreen';
 import { DeviceSetupScreen } from './screens/DeviceSetupScreen';
@@ -11,6 +11,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { OpenShiftScreen } from './screens/OpenShiftScreen';
 import { PosScreen } from './screens/PosScreen';
 import { useCartStore } from './stores/cart.store';
+import { useLocalSessionStore } from './stores/local-session.store';
 import { useSessionStore } from './stores/session.store';
 import { useShiftStore } from './stores/shift.store';
 
@@ -23,6 +24,7 @@ type Screen =
   | 'payment'
   | 'receipt'
   | 'close-shift'
+  | 'catalog-import-login'
   | 'catalog-import';
 
 export function App() {
@@ -34,18 +36,28 @@ export function App() {
   const shift = useShiftStore((s) => s.shift);
   const setShift = useShiftStore((s) => s.setShift);
   const cartClear = useCartStore((s) => s.clear);
+  const setLocalUser = useLocalSessionStore((s) => s.setUser);
 
   useEffect(() => {
     void (async () => {
       const config = await window.imdod.getConfig();
       setApiBaseUrl(config.apiBaseUrl);
       setConfiguredApiBaseUrl(config.apiBaseUrl);
-      if (config.deviceToken) {
-        setDeviceToken(config.deviceToken);
-        setScreen('login');
-      } else {
+      if (!config.hasDeviceToken) {
         setScreen('device-setup');
+        return;
       }
+      // Qurilma tokeni bor, lekin lokal baza hali BO'SH bo'lishi mumkin
+      // (masalan yangi versiya birinchi marta ishga tushganda) — PIN
+      // login lokal spravochnikka tayanadi, shuning uchun bu holatda
+      // login ekraniga o'tishdan oldin bir marta majburiy sinxronlanadi.
+      // Aks holda (allaqachon sinxronlangan) darhol o'tadi — oflaynda ham
+      // kutmasdan ishlashi uchun.
+      const hasLocalData = await window.imdod.hasLocalData();
+      if (!hasLocalData) {
+        await window.imdod.runSyncNow();
+      }
+      setScreen('login');
     })();
   }, []);
 
@@ -53,7 +65,10 @@ export function App() {
     await window.imdod.setApiBaseUrl(baseUrl);
     await window.imdod.setDeviceToken(token);
     setApiBaseUrl(baseUrl);
-    setDeviceToken(token);
+    // Birinchi PIN login lokal spravochnikka (foydalanuvchilar/kassa)
+    // tayanadi — u hali BO'SH, shuning uchun login ekraniga o'tishdan
+    // oldin majburiy bir marta onlayn sinxronlanadi.
+    await window.imdod.runSyncNow();
     setScreen('login');
   }
 
@@ -64,20 +79,19 @@ export function App() {
    * tugma orqali kassir/admin qo'lda qayta sozlashi mumkin.
    */
   async function handleResetDevice(): Promise<void> {
+    await window.imdod.logout();
     await window.imdod.clearDeviceToken();
-    setDeviceToken(null);
+    setLocalUser(null);
     useSessionStore.getState().clearSession();
     setScreen('device-setup');
   }
 
   async function handleLogin(pin: string): Promise<void> {
-    const tokens = await api.posLogin(pin);
-    useSessionStore.getState().setTokens(tokens.accessToken, tokens.refreshToken);
+    const result = await window.imdod.pinLogin(pin);
+    if (!result) throw new ApiError(401, 'PIN noto‘g‘ri');
+    setLocalUser(result);
 
-    const registerId = useSessionStore.getState().user?.registerId;
-    if (!registerId) throw new Error('Token ichida registerId topilmadi');
-
-    const current = await api.getCurrentShift(registerId);
+    const current = await window.imdod.getCurrentShift();
     if (current) {
       setShift(current);
       setScreen('pos');
@@ -87,15 +101,13 @@ export function App() {
   }
 
   async function handleOpenShift(openingCash: number): Promise<void> {
-    const registerId = useSessionStore.getState().user?.registerId;
-    if (!registerId) throw new Error('Token ichida registerId topilmadi');
-    setShift(await api.openShift(registerId, openingCash));
+    setShift(await window.imdod.openShift(openingCash));
     setScreen('pos');
   }
 
   async function handleCloseShift(closingCash: number): Promise<Shift> {
     if (!shift) throw new Error('Ochiq smena yo‘q');
-    const closed = await api.closeShift(shift.id, closingCash);
+    const closed = await window.imdod.closeShift(closingCash);
     setShift(null);
     return closed;
   }
@@ -106,8 +118,7 @@ export function App() {
     if (!shift) throw new Error('Ochiq smena yo‘q');
     const { lines, discount } = useCartStore.getState();
 
-    const sale = await api.createSale({
-      id: crypto.randomUUID(),
+    const sale = await window.imdod.createSale({
       shiftId: shift.id,
       cartDiscount: discount,
       lines: lines.map((l) => ({
@@ -128,6 +139,16 @@ export function App() {
     setLastSale(sale);
     cartClear();
     setScreen('receipt');
+  }
+
+  /**
+   * Katalog import — ADMIN/MANAGER va internet talab qiladi. PIN login
+   * endi JWT bermaydi (to'liq lokal), shuning uchun bu yerga birinchi
+   * marta kirilganda alohida admin/menejer login so'raladi; shu jarayon
+   * ichida (ilova qayta ishga tushmaguncha) qayta so'ralmaydi.
+   */
+  function handleOpenCatalogImport(): void {
+    setScreen(useSessionStore.getState().accessToken ? 'catalog-import' : 'catalog-import-login');
   }
 
   if (screen === 'loading') {
@@ -165,6 +186,15 @@ export function App() {
     );
   }
 
+  if (screen === 'catalog-import-login') {
+    return (
+      <AdminLoginScreen
+        onSuccess={() => setScreen('catalog-import')}
+        onCancel={() => setScreen('pos')}
+      />
+    );
+  }
+
   if (screen === 'catalog-import') {
     return <CatalogImportScreen onBack={() => setScreen('pos')} />;
   }
@@ -179,7 +209,7 @@ export function App() {
     <>
       <PosScreen
         onPay={() => setScreen('payment')}
-        onOpenImport={() => setScreen('catalog-import')}
+        onOpenImport={handleOpenCatalogImport}
         onCloseShift={() => setScreen('close-shift')}
       />
       {screen === 'payment' && (

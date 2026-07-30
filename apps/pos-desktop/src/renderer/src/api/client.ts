@@ -5,7 +5,6 @@ import { useSessionStore } from '../stores/session.store';
 // bo'lmasin. Kerak bo'lsa (lokal test uchun) qurilma sozlash ekranida
 // o'zgartirish mumkin.
 let apiBaseUrl = 'https://api-production-7438d.up.railway.app';
-let deviceToken: string | null = null;
 
 export function setApiBaseUrl(url: string): void {
   apiBaseUrl = url;
@@ -13,10 +12,6 @@ export function setApiBaseUrl(url: string): void {
 
 export function getApiBaseUrl(): string {
   return apiBaseUrl;
-}
-
-export function setDeviceToken(token: string | null): void {
-  deviceToken = token;
 }
 
 export class ApiError extends Error {
@@ -33,8 +28,6 @@ interface RequestOptions {
   body?: unknown;
   /** `Authorization: Bearer` qo'shilsinmi. Standart — ha. */
   auth?: boolean;
-  /** `x-device-token` qo'shilsinmi (faqat pos/login va sales uchun). */
-  device?: boolean;
   query?: Record<string, string | number | boolean | undefined>;
 }
 
@@ -99,7 +92,7 @@ async function readJsonBody<T>(res: Response): Promise<T> {
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, auth = true, device = false, query } = options;
+  const { method = 'GET', body, auth = true, query } = options;
   const url = buildUrl(path, query);
 
   const buildHeaders = (): HeadersInit => {
@@ -109,7 +102,6 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       const { accessToken } = useSessionStore.getState();
       if (accessToken) headers.authorization = `Bearer ${accessToken}`;
     }
-    if (device && deviceToken) headers['x-device-token'] = deviceToken;
     return headers;
   };
 

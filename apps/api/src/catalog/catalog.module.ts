@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { ChangeLogModule } from '../change-log/change-log.module';
 import { StockModule } from '../stock/stock.module';
 import { BarcodesController } from './barcodes/barcodes.controller';
 import { BarcodesService } from './barcodes/barcodes.service';
@@ -13,7 +14,7 @@ import { ProductsController } from './products/products.controller';
 import { ProductsService } from './products/products.service';
 
 @Module({
-  imports: [AuthModule, StockModule],
+  imports: [AuthModule, StockModule, ChangeLogModule],
   controllers: [ProductsController, CategoriesController, BarcodesController, ImportController],
   providers: [
     ProductsService,

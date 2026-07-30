@@ -22,8 +22,13 @@ interface BuildDtoOptions {
 }
 
 function buildDto(opts: BuildDtoOptions): CreateSaleDto {
+  const saleId = opts.saleId ?? 'sale-1';
   return {
-    id: opts.saleId ?? 'sale-1',
+    id: saleId,
+    // Har test o'z saleId'sidan farqli raqam olishi uchun — haqiqiy
+    // formatga mos kelishi shart emas (parse qilinmasa registerning
+    // kuzatuv hisoblagichi shunchaki yangilanmaydi, xato bermaydi).
+    number: `T01-${saleId}`,
     shiftId: opts.shiftId,
     customerId: opts.customerId,
     lines: [
@@ -61,13 +66,14 @@ describe('SalesService', () => {
     const register = await createRegister(prisma);
     const cashier = await createUser(prisma);
     const product = await createProduct(prisma, { retailPrice: 10_000, costPrice: 6_000 });
-    const shift = await shifts.openShift(register.id, cashier.id, 0);
+    const shift = await shifts.openShift(crypto.randomUUID(), register.id, cashier.id, 0);
     return { register, cashier, product, shift };
   }
 
-  it('savdo yaratadi va qoldiqni kamaytiradi', async () => {
+  it('savdo yaratadi, qurilma bergan chek raqamini saqlaydi va registerning kuzatuv hisoblagichini yangilaydi', async () => {
     const { product, shift, register, cashier } = await setup();
     const dto = buildDto({ shiftId: shift.id, productId: product.id });
+    dto.number = 'T01-000042';
 
     const sale = await sales.createSale(dto, {
       userId: cashier.id,
@@ -76,8 +82,11 @@ describe('SalesService', () => {
     });
 
     expect(sale.totalAmount).toBe(20_000);
-    expect(sale.number).toMatch(/^T01-\d{6}$/);
+    expect(sale.number).toBe('T01-000042');
     expect(await stock.getBalance(product.id)).toBe(-2_000);
+
+    const reloadedRegister = await prisma.register.findUniqueOrThrow({ where: { id: register.id } });
+    expect(reloadedRegister.lastReceiptSeq).toBe(42);
   });
 
   it('bir xil id bilan qayta yuborilsa dublikat yaratmaydi (idempotentlik)', async () => {

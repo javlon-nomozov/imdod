@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { computeCart, computePayment, formatReceiptNumber, type CartLineInput } from '@imdod/core';
+import { computeCart, computePayment, parseReceiptNumber, type CartLineInput } from '@imdod/core';
 import { Prisma } from '@prisma/client';
 import { v7 as uuidv7 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
@@ -60,20 +60,25 @@ export class SalesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // Kassa kodi bo'yicha chek raqami — atomik oshirish (bitta
-        // tranzaksiya ichida, shuning uchun ikkita parallel savdo
-        // bir xil raqamni ololmaydi).
-        const register = await tx.register.update({
-          where: { id: actor.registerId },
-          data: { lastReceiptSeq: { increment: 1 } },
-        });
-        const number = formatReceiptNumber(register.code, register.lastReceiptSeq);
+        // Chek raqami endi QURILMADA generatsiya qilinadi (oflaynda ham
+        // ishlashi kerak — serverdan navbat so'rab bo'lmaydi). Server
+        // faqat registerning KUZATUV uchun saqlagan `lastReceiptSeq`sini
+        // "hozirgacha ko'rilgan eng katta ketma-ketlik"ka yangilaydi —
+        // haqiqiy raqam allaqachon chekda chop etilgan, uni o'zgartirib
+        // bo'lmaydi.
+        const parsedNumber = parseReceiptNumber(dto.number);
+        if (parsedNumber) {
+          await tx.register.updateMany({
+            where: { id: actor.registerId, lastReceiptSeq: { lt: parsedNumber.seq } },
+            data: { lastReceiptSeq: parsedNumber.seq },
+          });
+        }
         const occurredAt = new Date(dto.occurredAt);
 
         const sale = await tx.sale.create({
           data: {
             id: dto.id,
-            number,
+            number: dto.number,
             registerId: actor.registerId,
             shiftId: shift.id,
             cashierId: actor.userId,

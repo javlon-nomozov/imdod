@@ -329,7 +329,9 @@ model StockBalance {
 // ══════════════════════════════════════════════════════════════════════
 
 model Shift {
-  id         String   @id @default(uuid())
+  /// Qurilmada generatsiya qilinadi (Sale kabi) — oflaynda ochilgan
+  /// smena qayta yuborilsa ham dublikat bo'lmasligi uchun.
+  id         String   @id
   registerId String
   register   Register @relation(fields: [registerId], references: [id])
 

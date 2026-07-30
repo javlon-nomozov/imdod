@@ -38,6 +38,9 @@ importers:
       '@imdod/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
+      '@imdod/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@nestjs/common':
         specifier: ^10.4.15
         version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -129,6 +132,12 @@ importers:
       '@imdod/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
+      '@imdod/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
+      argon2:
+        specifier: ^0.41.1
+        version: 0.41.1
       react:
         specifier: ^19.2.0
         version: 19.2.8
@@ -190,6 +199,12 @@ importers:
         version: 2.1.9(@types/node@24.13.3)(lightningcss@1.32.0)(terser@5.49.0)
 
   packages/i18n:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/sync:
     devDependencies:
       typescript:
         specifier: ^5.7.3

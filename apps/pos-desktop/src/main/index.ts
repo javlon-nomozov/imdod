@@ -1,6 +1,16 @@
 import { join } from 'node:path';
 import { app, BrowserWindow, shell } from 'electron';
-import { registerIpcHandlers } from './ipc-handlers';
+import { getApiBaseUrl, getDeviceToken } from './config-store';
+import { openConnection } from './db/connection';
+import { OutboxRepo } from './db/outbox.repo';
+import { ProductsRepo } from './db/products.repo';
+import { RegistersRepo } from './db/registers.repo';
+import { SalesRepo } from './db/sales.repo';
+import { ShiftsRepo } from './db/shifts.repo';
+import { SyncStateRepo } from './db/sync-state.repo';
+import { UsersRepo } from './db/users.repo';
+import { broadcastSyncStatus, registerIpcHandlers } from './ipc-handlers';
+import { SyncEngine } from './sync/engine';
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -33,7 +43,34 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
-  registerIpcHandlers();
+  // Lokal spravochnik ko'zgusi + outbox — `--user-data-dir=<nom>` orqali
+  // (Electron/Chromium'ning o'zi tan oladigan standart parametr) ikki
+  // mustaqil nusxani parallel ishga tushirib, ikki-qurilma sinovi
+  // o'tkazish mumkin (har biri o'z papkasi, demak o'z bazasi).
+  const db = openConnection(join(app.getPath('userData'), 'local.db'));
+  const repos = {
+    products: new ProductsRepo(db),
+    users: new UsersRepo(db),
+    registers: new RegistersRepo(db),
+    shifts: new ShiftsRepo(db),
+    sales: new SalesRepo(db),
+    outbox: new OutboxRepo(db),
+    syncState: new SyncStateRepo(db),
+  };
+
+  const syncEngine = new SyncEngine({
+    getConfig: () => {
+      const deviceToken = getDeviceToken();
+      if (!deviceToken) return null;
+      return { apiBaseUrl: getApiBaseUrl(), deviceToken };
+    },
+    repos,
+    onStatusChange: broadcastSyncStatus,
+  });
+
+  registerIpcHandlers({ ...repos, syncEngine });
+  syncEngine.start();
+
   createWindow();
 
   app.on('activate', () => {
