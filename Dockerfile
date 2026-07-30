@@ -31,8 +31,13 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 COPY . .
 RUN pnpm --filter @imdod/api exec prisma generate
-# turbo tartibni o'zi hal qiladi: core → i18n → api
-RUN pnpm build
+# Faqat @imdod/api va uning bog'liqliklarini (core, i18n) quramiz —
+# `pnpm build` (turbo, filtersiz) BUTUN monorepoga (jumladan
+# apps/pos-desktop'ga) urinardi, lekin bu konteyner faqat api uchun
+# bog'liqliklarni o'rnatgan (yuqoridagi `deps` bosqichi) — pos-desktop
+# node_modules'siz qolib, build muvaffaqiyatsiz tugardi. `...` — api
+# ishlashi uchun kerakli barcha ichki paketlarni ham quradi (core → i18n → api).
+RUN pnpm exec turbo run build --filter=@imdod/api...
 
 # ─── Ishga tushirish ──────────────────────────────────────────────────
 # node_modules to'liq ko'chiriladi (dev bog'liqliklar bilan) — chunki
