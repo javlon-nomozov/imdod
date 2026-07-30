@@ -17,10 +17,15 @@ async function bootstrap(): Promise<void> {
   // POS, mobil ilova, sayt va Mini App turli manzillardan keladi.
   app.enableCors({ origin: true, credentials: true });
 
-  const port = Number(process.env.API_PORT ?? 3000);
-  await app.listen(port);
+  // Railway (va ko'p hosting) portni `PORT` orqali beradi — uni
+  // hurmat qilmasak, konteyner ishga tushadi-yu, hech kim ulana olmaydi.
+  // Lokalda esa `API_PORT` qulayroq.
+  const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
 
-  new Logger('Bootstrap').log(`Imdod API ishga tushdi: http://localhost:${port}`);
+  // Konteyner ichida `localhost` ga bog'lansak, tashqaridan ko'rinmaydi.
+  await app.listen(port, '0.0.0.0');
+
+  new Logger('Bootstrap').log(`Imdod API ishga tushdi, port: ${port}`);
 }
 
 void bootstrap();
