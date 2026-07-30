@@ -6,7 +6,7 @@ Kitob va kanstovar do'koni uchun savdo tizimi: **POS**, **mobil ilova**, **websa
 
 | Papka              | Nima                                            | Holat        |
 | ------------------ | ----------------------------------------------- | ------------ |
-| `apps/api`         | NestJS + PostgreSQL + Prisma                    | boshlandi    |
+| `apps/api`         | NestJS + PostgreSQL + Prisma                    | ✅ 1-bosqich |
 | `apps/pos-desktop` | Electron + React, oflayn ishlaydigan kassa      | rejalashtir. |
 | `apps/mobile`      | Expo — hisobot, skanerlash, mobil savdo         | rejalashtir. |
 | `apps/web`         | Next.js — sayt, admin panel, Telegram Mini App  | rejalashtir. |
@@ -39,10 +39,16 @@ Saytdan/botdan berilgan zakaz **ombordan hech narsa kamaytirmaydi va rezerv qilm
 Kerakli dasturlar: **Node 22+**, **pnpm 9+**, **Docker Desktop**.
 
 ```bash
-pnpm install          # paketlarni o'rnatish
-pnpm db:up            # PostgreSQL'ni ko'tarish (Docker)
-pnpm db:migrate       # migratsiyalarni qo'llash
+pnpm install                    # paketlarni o'rnatish
+pnpm db:up                      # PostgreSQL'ni ko'tarish (Docker)
+pnpm db:migrate                 # migratsiyalarni qo'llash
+pnpm --filter api seed          # boshlang'ich ma'lumot: K01 kassa, qurilma tokeni, ADMIN/CASHIER, namunaviy tovarlar
+pnpm --filter api dev           # API'ni ishga tushirish (http://localhost:3000)
 ```
+
+Seed konsolga bir martalik qurilma tokenini chiqaradi — shu token bilan
+`POST /auth/pos/login` (`x-device-token` sarlavhasi + PIN `1234` ADMIN
+uchun) orqali kirish mumkin.
 
 > ⚠️ Baza **5433**-portda turadi, 5432 emas — bu kompyuterda alohida o'rnatilgan PostgreSQL 5432 ni band qilgan. Sozlama: `docker-compose.yml` va `apps/api/.env`.
 
@@ -61,7 +67,7 @@ pnpm db:down          # bazani to'xtatish
 ## Bosqichlar
 
 - [x] **0** — Monorepo poydevori, Prisma sxemasi, `core` va `i18n`
-- [ ] **1** — API yadrosi: auth, katalog, ombor jurnali, savdo, smena
+- [x] **1** — API yadrosi: auth (qurilma tokeni + PIN + admin parol), rollar/guard'lar, katalog CRUD, ombor jurnali, smena, savdo (idempotent)
 - [ ] **2** — POS desktop MVP (onlayn)
 - [ ] **3** — Oflayn qatlam: SQLite mirror, outbox, sinxronizatsiya
 - [ ] **4** — Ombor va ta'minot
